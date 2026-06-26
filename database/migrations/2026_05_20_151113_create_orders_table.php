@@ -38,7 +38,7 @@ return new class extends Migration
 
             $table->decimal('total_amount', 12, 2)->default(0);
 
-            // STATUS: pending_payment | processing | shipped | delivered | cancelled | waiting_verification
+            // STATUS: pending_payment | processing | shipped | delivered | completed | cancelled | waiting_verification
             $table->string('status')->default('pending_payment');
 
             // PENGIRIMAN

@@ -9,7 +9,7 @@ class OrderItem extends Model
 {
     use SoftDeletes;
     protected $fillable = [
-        'order_id', 'product_id', 'product_name', 'product_image',
+        'order_id', 'product_id', 'product_variant_id', 'product_name', 'product_image',
         'price', 'qty', 'subtotal', 'variant', 'weight',
         'store_id', 'store_name',
     ];
@@ -22,6 +22,11 @@ class OrderItem extends Model
     public function product()
     {
         return $this->belongsTo(Product::class)->withTrashed();
+    }
+
+    public function productVariant()
+    {
+        return $this->belongsTo(ProductVariant::class)->withTrashed();
     }
 
     public function store()

@@ -78,6 +78,12 @@ class ChatController extends Controller
             ], 403);
         }
 
+        // Mark incoming messages as read
+        Chat::where('chat_room_id', $room->id)
+            ->where('sender_id', '!=', $user->id)
+            ->where('is_read', false)
+            ->update(['is_read' => true]);
+
         $messages = Chat::where('chat_room_id', $room->id)
             ->with('sender')
             ->latest()
@@ -101,12 +107,34 @@ class ChatController extends Controller
                 'product',
                 'lastMessage'
             ])
-            ->latest()
-            ->get();
+            ->get()
+            ->sortByDesc(fn($room) => $room->lastMessage ? $room->lastMessage->created_at : $room->created_at)
+            ->values();
+
+        // Tambahkan indikator status online di data response
+        $mappedRooms = $rooms->map(function ($room) use ($user) {
+            $roomArray = $room->toArray();
+            
+            if ($room->buyer) {
+                $roomArray['buyer']['is_online'] = \Illuminate\Support\Facades\Cache::has('user-online-' . $room->buyer_id);
+            }
+            
+            if ($room->seller) {
+                $roomArray['seller']['is_online'] = \Illuminate\Support\Facades\Cache::has('user-online-' . $room->seller_id);
+            }
+
+            // Count unread messages in this room sent by the other user
+            $roomArray['unread_count'] = Chat::where('chat_room_id', $room->id)
+                ->where('sender_id', '!=', $user->id)
+                ->where('is_read', false)
+                ->count();
+            
+            return $roomArray;
+        });
 
         return response()->json([
             'status' => true,
-            'data'   => $rooms
+            'data'   => $mappedRooms
         ]);
     }
 }

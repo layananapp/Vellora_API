@@ -20,12 +20,12 @@ class ChatRoom extends Model
 
     public function buyer()
     {
-        return $this->belongsTo(User::class, 'buyer_id');
+        return $this->belongsTo(User::class, 'buyer_id')->withTrashed();
     }
 
     public function seller()
     {
-        return $this->belongsTo(User::class, 'seller_id');
+        return $this->belongsTo(User::class, 'seller_id')->withTrashed();
     }
 
     public function product()

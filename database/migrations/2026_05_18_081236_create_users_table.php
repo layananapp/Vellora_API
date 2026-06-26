@@ -37,6 +37,9 @@ return new class extends Migration
             $table->string('profile_photo')
                 ->nullable();
 
+            $table->timestamp('last_seen_at')
+                ->nullable();
+
             $table->softDeletes();
 
             $table->timestamps();

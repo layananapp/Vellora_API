@@ -29,6 +29,44 @@ class Product extends Model
         'is_active' => 'boolean',
     ];
 
+    protected $appends = ['price_min', 'price_max'];
+
+    public function getPriceMinAttribute()
+    {
+        $variants = $this->variants;
+        if ($variants && $variants->count() > 0) {
+            return (float) $variants->min('price');
+        }
+        return (float) ($this->attributes['price'] ?? 0);
+    }
+
+    public function getPriceMaxAttribute()
+    {
+        $variants = $this->variants;
+        if ($variants && $variants->count() > 0) {
+            return (float) $variants->max('price');
+        }
+        return (float) ($this->attributes['price'] ?? 0);
+    }
+
+    public function getPriceAttribute($value)
+    {
+        $variants = $this->variants;
+        if ($variants && $variants->count() > 0) {
+            return (float) $variants->min('price');
+        }
+        return (float) $value;
+    }
+
+    public function getStockAttribute($value)
+    {
+        $variants = $this->variants;
+        if ($variants && $variants->count() > 0) {
+            return (int) $variants->sum('stock');
+        }
+        return (int) $value;
+    }
+
     public function store()
     {
         return $this->belongsTo(Store::class);

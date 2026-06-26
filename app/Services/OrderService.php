@@ -52,10 +52,32 @@ class OrderService
 
         foreach ($items as $item) {
             $product = Product::find($item['product_id'] ?? null);
-            $price   = $product ? (float) $product->price : (float) ($item['price'] ?? 0);
-            $qty     = (int) ($item['qty'] ?? 1);
+            $variant = null;
+            if (!empty($item['product_variant_id'])) {
+                $variant = ProductVariant::find($item['product_variant_id']);
+                if ($variant && $product && $variant->product_id !== $product->id) {
+                    return response()->json([
+                        'status'  => false,
+                        'message' => "Variasi tidak cocok dengan produk"
+                    ], 422);
+                }
+            }
 
-            if ($product && $product->stock < $qty) {
+            $price = $product ? (float) $product->price : (float) ($item['price'] ?? 0);
+            if ($variant) {
+                $price = (float) $variant->price;
+            }
+
+            $qty = (int) ($item['qty'] ?? 1);
+
+            if ($variant) {
+                if ($variant->stock < $qty) {
+                    return response()->json([
+                        'status'  => false,
+                        'message' => "Stok variasi '{$variant->variant_name}' dari produk '{$product->product_name}' tidak mencukupi"
+                    ], 422);
+                }
+            } else if ($product && $product->stock < $qty) {
                 return response()->json([
                     'status'  => false,
                     'message' => "Stok produk '{$product->product_name}' tidak mencukupi"
@@ -67,16 +89,17 @@ class OrderService
             $totalWeight     += ($item['weight'] ?? 1) * $qty;
 
             $orderItems[] = [
-                'product_id'    => $product?->id,
-                'product_name'  => $item['name'] ?? $product?->product_name ?? 'Produk',
-                'product_image' => $item['image'] ?? $product?->images?->first()?->image,
-                'price'         => $price,
-                'qty'           => $qty,
-                'subtotal'      => $subtotal,
-                'variant'       => $item['variant'] ?? null,
-                'weight'        => $item['weight']  ?? 1,
-                'store_id'      => $product?->store_id ?? ($item['store_id'] ?? null),
-                'store_name'    => $item['shop']['name'] ?? $product?->store?->store_name ?? null,
+                'product_id'         => $product?->id,
+                'product_variant_id' => $variant?->id,
+                'product_name'       => $item['name'] ?? $product?->product_name ?? 'Produk',
+                'product_image'      => $item['image'] ?? $product?->images?->first()?->image,
+                'price'              => $price,
+                'qty'                => $qty,
+                'subtotal'           => $subtotal,
+                'variant'            => $variant ? $variant->variant_name : ($item['variant'] ?? null),
+                'weight'             => $item['weight']  ?? 1,
+                'store_id'           => $product?->store_id ?? ($item['store_id'] ?? null),
+                'store_name'         => $item['shop']['name'] ?? $product?->store?->store_name ?? null,
             ];
         }
 
@@ -131,7 +154,9 @@ class OrderService
             }
 
             foreach ($items as $item) {
-                if ($item['product_id'] ?? null) {
+                if (!empty($item['product_variant_id'])) {
+                    ProductVariant::where('id', $item['product_variant_id'])->decrement('stock', $item['qty'] ?? 1);
+                } else if ($item['product_id'] ?? null) {
                     Product::where('id', $item['product_id'])->decrement('stock', $item['qty'] ?? 1);
                 }
             }
@@ -166,6 +191,25 @@ class OrderService
             NotificationService::orderPlaced($user->id, $order->id, $order->invoice_number, $totalAmount);
             if ($payMethod !== 'COD') {
                 NotificationService::paymentReminder($user->id, $order->id, $order->invoice_number, $totalAmount);
+            }
+
+            // Kirim notifikasi ke seller (toko)
+            try {
+                $storeIds = collect($orderItems)->pluck('store_id')->unique()->filter();
+                foreach ($storeIds as $storeId) {
+                    $storeModel = \App\Models\Store::find($storeId);
+                    if ($storeModel && $storeModel->user_id) {
+                        NotificationService::create(
+                            $storeModel->user_id,
+                            'order_placed',
+                            'Pesanan Baru Masuk! 🛒',
+                            "Toko Anda menerima pesanan baru #{$order->invoice_number}.",
+                            ['order_id' => $order->id]
+                        );
+                    }
+                }
+            } catch (\Exception $e) {
+                // Abaikan
             }
 
             // ----------------------------------------------------------------

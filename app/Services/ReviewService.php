@@ -33,18 +33,18 @@ class ReviewService
             }
 
             // Pastikan order_item milik user ini
-            if ($orderItem->order->user_id !== $user->id) {
+            if ($orderItem->order->user_id != $user->id) {
                 return response()->json([
                     'status'  => false,
                     'message' => 'Kamu tidak memiliki akses ke item ini',
                 ], 403);
             }
 
-            // Pastikan status order sudah 'delivered'
-            if ($orderItem->order->status !== 'delivered') {
+            // Pastikan status order sudah 'completed'
+            if ($orderItem->order->status !== 'completed') {
                 return response()->json([
                     'status'  => false,
-                    'message' => 'Hanya produk yang sudah diterima yang bisa diulas',
+                    'message' => 'Hanya produk yang sudah selesai yang bisa diulas',
                 ], 422);
             }
 
@@ -92,10 +92,10 @@ class ReviewService
     */
     public function getEligibleItems($user)
     {
-        // Ambil semua order_item milik user dari order delivered
+        // Ambil semua order_item milik user dari order completed
         $orderItems = OrderItem::whereHas('order', function ($q) use ($user) {
                 $q->where('user_id', $user->id)
-                  ->where('status', 'delivered');
+                  ->where('status', 'completed');
             })
             // Belum pernah di-review
             ->whereDoesntHave('review')

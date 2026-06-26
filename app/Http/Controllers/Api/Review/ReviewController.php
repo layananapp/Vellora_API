@@ -31,7 +31,7 @@ class ReviewController extends Controller
             'order_id'      => ['nullable', 'exists:orders,id'],
             'order_item_id' => ['nullable', 'exists:order_items,id'],
             'rating'        => ['required', 'integer', 'min:1', 'max:5'],
-            'review'        => ['nullable', 'string', 'max:1000'],
+            'review'        => ['nullable', 'string', 'min:10', 'max:250'],
         ]);
 
         return $this->reviewService->createReview($user, $validated);
@@ -71,34 +71,43 @@ class ReviewController extends Controller
     */
     public function getProductReviews($productId)
     {
-        $reviews = Review::where('product_id', $productId)
-            ->with('user:id,name,profile_photo_path')
-            ->latest()
-            ->get()
-            ->map(function ($review) {
+        try {
+            $reviews = Review::where('product_id', $productId)
+                ->with('user:id,name,profile_photo')
+                ->latest()
+                ->get()
+                ->map(function ($review) {
 
-                $photo = $review->user?->profile_photo_path;
+                    $photo = $review->user?->profile_photo;
 
-                if ($photo && !str_starts_with($photo, 'http')) {
-                    $photo = 'https://api.layananapp.my.id/' . $photo;
-                }
+                    if ($photo && !str_starts_with($photo, 'http')) {
+                        $photo = 'https://api.layananapp.my.id/' . $photo;
+                    }
 
-                return [
-                    'id'         => $review->id,
-                    'user_name'  => $review->user?->name ?? 'Pengguna',
-                    'user_photo' => $photo
-                        ?? 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
-                    'rating'     => $review->rating,
-                    'review'     => $review->review,
-                    'created_at' => $review->created_at
-                        ->translatedFormat('d F Y'),
-                ];
-            });
+                    return [
+                        'id'         => $review->id,
+                        'user_name'  => $review->user?->name ?? 'Pengguna',
+                        'user_photo' => $photo
+                            ?? 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+                        'rating'     => $review->rating,
+                        'review'     => $review->review,
+                        'created_at' => $review->created_at
+                            ? $review->created_at->translatedFormat('d F Y')
+                            : '',
+                    ];
+                });
 
-        return response()->json([
-            'status' => true,
-            'data'   => $reviews,
-        ]);
+            return response()->json([
+                'status' => true,
+                'data'   => $reviews,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Debug Error: ' . $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ], 500);
+        }
     }
 
     public function getAllReviews()

@@ -24,7 +24,7 @@ class ReportController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'jenis_laporan' => ['required', 'string', 'max:100'],
-            'judul'         => ['required', 'string', 'max:150'],
+            'judul'         => ['required', 'string', 'min:5', 'max:150'],
             'deskripsi'     => ['required', 'string', 'min:10'],
             'foto.*'        => ['nullable', 'image', 'max:4096'], // max 4MB per foto
         ]);
@@ -38,7 +38,7 @@ class ReportController extends Controller
         }
 
         $report = $this->reportService->createReport(
-            $request->user(),
+            $request->get('user'),
             $validator->validated(),
             $request->file('foto') // bisa null kalau gak ada foto
         );
@@ -56,7 +56,7 @@ class ReportController extends Controller
      */
     public function index(Request $request)
     {
-        $reports = $this->reportService->getUserReports($request->user());
+        $reports = $this->reportService->getUserReports($request->get('user'));
 
         return response()->json([
             'status' => true,

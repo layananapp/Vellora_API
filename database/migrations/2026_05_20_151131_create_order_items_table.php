@@ -18,6 +18,9 @@ return new class extends Migration
             $table->foreignId('product_id')
                 ->nullable()->constrained()->nullOnDelete();
 
+            $table->foreignId('product_variant_id')
+                ->nullable()->constrained('product_variants')->nullOnDelete();
+
             // Snapshot produk saat checkout (agar tidak berubah walau produk diedit)
             $table->string('product_name');
             $table->string('product_image')->nullable();

@@ -12,6 +12,7 @@ class Chat extends Model
         'sender_id',
         'message',
         'image_path',
+        'is_read',
     ];
 
     protected $appends = ['image_url'];

@@ -33,7 +33,8 @@ class Order extends Model
         'waiting_verification'  => 'menunggu verifikasi',
         'processing'            => 'dikemas',
         'shipped'               => 'dikirim',
-        'delivered'             => 'selesai',
+        'delivered'             => 'diterima',
+        'completed'             => 'selesai',
         'cancelled'             => 'dibatalkan',
     ];
 

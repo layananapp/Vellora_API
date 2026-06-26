@@ -19,6 +19,8 @@ class OrderController extends Controller
     {
         $user = $request->get('user');
 
+        $this->autoCompleteDeliveredOrders();
+
         $orders = Order::where('user_id', $user->id)
             ->with([
                 'items',
@@ -43,6 +45,8 @@ class OrderController extends Controller
     public function getOrderDetail(Request $request, $id)
     {
         $user = $request->get('user');
+
+        $this->autoCompleteDeliveredOrders();
 
         $order = Order::where('id', $id)
             ->where('user_id', $user->id)
@@ -158,6 +162,86 @@ class OrderController extends Controller
 
     /*
     |--------------------------------------------------
+    | PUT /api/orders/{id}/receive
+    |--------------------------------------------------
+    */
+    public function receiveOrder(Request $request, $id)
+    {
+        try {
+            $user  = $request->get('user');
+
+            $order = Order::where('id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$order) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Pesanan tidak ditemukan',
+                ], 404);
+            }
+
+            if ($order->status !== 'delivered') {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Pesanan harus sampai terlebih dahulu sebelum ditandai sebagai diterima',
+                ], 422);
+            }
+
+            $order->update(['status' => 'completed']);
+
+            try {
+                if ($order->payment && $order->payment->status !== 'paid') {
+                    $order->payment->update(['status' => 'paid']);
+                }
+            } catch (\Throwable $e) {
+                // Ignore
+            }
+
+            try {
+                OrderHistory::create([
+                    'order_id'    => $order->id,
+                    'status'      => 'completed',
+                    'description' => 'Pesanan telah dikonfirmasi diterima oleh pembeli. Transaksi selesai.',
+                ]);
+            } catch (\Throwable $e) {
+                // Ignore
+            }
+
+            try {
+                $firstItem = $order->items()->first();
+                $storeId = $firstItem?->store_id;
+                if ($storeId) {
+                    $storeModel = \App\Models\Store::find($storeId);
+                    if ($storeModel && $storeModel->user_id) {
+                        NotificationService::create(
+                            (int) $storeModel->user_id,
+                            'order_completed',
+                            'Transaksi Selesai! 🎉',
+                            "Pesanan #{$order->invoice_number} telah diterima oleh pembeli.",
+                            ['order_id' => $order->id]
+                        );
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Ignore
+            }
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'Pesanan berhasil diselesaikan',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Debug Error: ' . $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ], 500);
+        }
+    }
+
+    /*
+    |--------------------------------------------------
     | GET /api/orders/seller/orders (Seller only)
     |--------------------------------------------------
     */
@@ -172,6 +256,8 @@ class OrderController extends Controller
                 'message' => 'Anda belum memiliki toko',
             ], 403);
         }
+
+        $this->autoCompleteDeliveredOrders();
 
         // Ambil order yang ada item dari toko ini
         $orderIds = \App\Models\OrderItem::where('store_id', $store->id)
@@ -207,6 +293,8 @@ class OrderController extends Controller
                 'message' => 'Anda belum memiliki toko',
             ], 403);
         }
+
+        $this->autoCompleteDeliveredOrders();
 
         // Pastikan order ini mengandung item dari toko seller
         $hasItem = \App\Models\OrderItem::where('order_id', $id)
@@ -267,6 +355,7 @@ class OrderController extends Controller
             'payment_expired_ms' => $order->payment_expired_at
                 ? ($order->payment_expired_at->timestamp * 1000) : null,
             'created_at'     => $order->created_at->toIso8601String(),
+            'updated_at'     => $order->updated_at?->toIso8601String(),
 
             // Untuk tampilan list
             'product_name'   => $firstItem?->product_name ?? 'Produk',
@@ -330,6 +419,7 @@ class OrderController extends Controller
             'payment_expired_ms' => $order->payment_expired_at
                 ? ($order->payment_expired_at->timestamp * 1000) : null,
             'created_at'      => $order->created_at->toIso8601String(),
+            'updated_at'      => $order->updated_at?->toIso8601String(),
 
             // ITEMS
             'items'           => $items,
@@ -357,6 +447,93 @@ class OrderController extends Controller
         ];
     }
 
+    public function updateSellerOrderStatus(Request $request, $id)
+    {
+        $user  = $request->get('user');
+        $store = $user->store;
+
+        if (!$store) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Anda belum memiliki toko',
+            ], 403);
+        }
+
+        // Pastikan order ini mengandung item dari toko seller
+        $hasItem = \App\Models\OrderItem::where('order_id', $id)
+            ->where('store_id', $store->id)
+            ->exists();
+
+        if (!$hasItem) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Pesanan tidak ditemukan atau Anda tidak memiliki akses.',
+            ], 404);
+        }
+
+        $order = Order::where('id', $id)->first();
+
+        if (!$order) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Pesanan tidak ditemukan',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'status'         => ['required', 'string', 'in:processing,shipped,delivered,cancelled'],
+            'courier'        => ['nullable', 'string'],
+            'receipt_number' => ['nullable', 'string'],
+        ]);
+
+        $status = $validated['status'];
+
+        // Update status order
+        $updateData = ['status' => $status];
+        if ($status === 'shipped') {
+            $updateData['courier'] = $validated['courier'] ?? 'Ninja Xpress';
+            $updateData['receipt_number'] = $validated['receipt_number'] ?? '-';
+        }
+        $order->update($updateData);
+
+        // Buat OrderHistory
+        $statusTexts = [
+            'processing' => 'Pesanan sedang diproses oleh penjual.',
+            'shipped'    => 'Pesanan telah dikirim.' . ($order->courier ? " Kurir: {$order->courier}, Resi: {$order->receipt_number}" : ''),
+            'delivered'  => 'Pesanan telah sampai di tujuan / diterima oleh kurir.',
+            'cancelled'  => 'Pesanan dibatalkan oleh penjual.',
+        ];
+        
+        OrderHistory::create([
+            'order_id'    => $order->id,
+            'status'      => $status,
+            'description' => $statusTexts[$status] ?? "Status pesanan diperbarui menjadi {$status}",
+        ]);
+
+        // Kirim notifikasi ke pembeli
+        if ($status === 'processing') {
+            NotificationService::orderProcessing($order->user_id, $order->id, $order->invoice_number);
+        } elseif ($status === 'shipped') {
+            NotificationService::orderShipped($order->user_id, $order->id, $order->invoice_number, $order->courier, $order->receipt_number);
+        } elseif ($status === 'delivered') {
+            NotificationService::create(
+                $order->user_id,
+                'order_delivered',
+                'Pesanan Sampai! 📦',
+                "Pesanan #{$order->invoice_number} telah sampai di alamat tujuan.",
+                ['order_id' => $order->id]
+            );
+        } elseif ($status === 'cancelled') {
+            NotificationService::orderCancelled($order->user_id, $order->id, $order->invoice_number, 'Dibatalkan oleh penjual');
+        }
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Status pesanan berhasil diperbarui',
+            'data'    => $order
+        ]);
+    }
+
     public function getAllOrders()
     {
         $orders = Order::with([
@@ -371,5 +548,53 @@ class OrderController extends Controller
             'status' => true,
             'data'   => $orders,
         ]);
+    }
+
+    private function autoCompleteDeliveredOrders()
+    {
+        $deliveredOrders = Order::where('status', 'delivered')
+            ->where('updated_at', '<=', now()->subHours(48))
+            ->get();
+
+        foreach ($deliveredOrders as $order) {
+            $order->update(['status' => 'completed']);
+
+            if ($order->payment && $order->payment->status !== 'paid') {
+                $order->payment->update(['status' => 'paid']);
+            }
+
+            OrderHistory::create([
+                'order_id'    => $order->id,
+                'status'      => 'completed',
+                'description' => 'Pesanan otomatis selesai oleh sistem (48 jam setelah diterima kurir).',
+            ]);
+
+            NotificationService::create(
+                $order->user_id,
+                'order_completed',
+                'Pesanan Selesai! 🎉',
+                "Pesanan #{$order->invoice_number} telah diselesaikan otomatis oleh sistem.",
+                ['order_id' => $order->id]
+            );
+
+            try {
+                $firstItem = $order->items()->first();
+                $storeId = $firstItem?->store_id;
+                if ($storeId) {
+                    $storeModel = \App\Models\Store::find($storeId);
+                    if ($storeModel && $storeModel->user_id) {
+                        NotificationService::create(
+                            $storeModel->user_id,
+                            'order_completed',
+                            'Transaksi Selesai! 🎉',
+                            "Pesanan #{$order->invoice_number} telah diselesaikan otomatis oleh sistem.",
+                            ['order_id' => $order->id]
+                        );
+                    }
+                }
+            } catch (\Exception $e) {
+                // Ignore
+            }
+        }
     }
 }

@@ -27,6 +27,7 @@ class CheckoutController extends Controller
         $validated = $request->validate([
             'items'          => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['nullable', 'integer'],
+            'items.*.product_variant_id' => ['nullable', 'integer'],
             'items.*.name'   => ['required', 'string'],
             'items.*.price'  => ['required', 'numeric'],
             'items.*.qty'    => ['required', 'integer', 'min:1'],

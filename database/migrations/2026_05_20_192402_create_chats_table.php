@@ -26,6 +26,8 @@ return new class extends Migration
             // Path gambar di storage
             $table->string('image_path')->nullable();
 
+            $table->boolean('is_read')->default(false);
+
             $table->timestamps();
 
         });

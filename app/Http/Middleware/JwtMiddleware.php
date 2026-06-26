@@ -39,6 +39,13 @@ class JwtMiddleware
                 ], 404);
             }
 
+            // Simpan status online user ke Cache (berlaku selama 5 menit)
+            try {
+                \Illuminate\Support\Facades\Cache::put('user-online-' . $user->id, true, now()->addMinutes(5));
+            } catch (\Exception $e) {
+                // Abaikan jika cache bermasalah
+            }
+
             $request->attributes->add([
                 'user' => $user
             ]);

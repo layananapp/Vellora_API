@@ -200,6 +200,7 @@ Route::prefix('orders')
         Route::get('/{id}', [OrderController::class, 'getOrderDetail']);
         Route::get('/{id}/histories', [OrderController::class, 'getOrderHistories']);
         Route::put('/{id}/cancel', [OrderController::class, 'cancelOrder']);
+        Route::put('/{id}/receive', [OrderController::class, 'receiveOrder']);
 
     });
 
@@ -217,6 +218,9 @@ Route::prefix('seller')
 
         // GET /api/seller/orders/{id} — detail pesanan yang masuk ke toko seller
         Route::get('/orders/{id}', [OrderController::class, 'getSellerOrderDetail']);
+
+        // PUT /api/seller/orders/{id}/status — update status pesanan oleh seller
+        Route::put('/orders/{id}/status', [OrderController::class, 'updateSellerOrderStatus']);
 
     });
 

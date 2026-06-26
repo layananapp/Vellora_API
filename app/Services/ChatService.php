@@ -92,6 +92,20 @@ class ChatService
 
         $chat->load('sender');
 
+        // Kirim notifikasi ke penerima chat
+        try {
+            $recipientId = ($room->buyer_id == $user->id) ? $room->seller_id : $room->buyer_id;
+            \App\Services\NotificationService::create(
+                $recipientId,
+                'chat',
+                'Pesan Baru 💬',
+                "{$user->name}: " . ($chat->message ?? 'Mengirim gambar'),
+                ['chat_room_id' => $room->id]
+            );
+        } catch (\Exception $e) {
+            // Abaikan
+        }
+
         $chatArray              = $chat->toArray();
         $chatArray['upload_id'] = $uploadId;
 
