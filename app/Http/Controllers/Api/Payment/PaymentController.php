@@ -75,7 +75,6 @@ class PaymentController extends Controller
                 'customer_email' => $user->email ?? '',
             ]);
 
-            // ← FIX: DompetX return di root, bukan di dalam 'data'
             $dompetxId = $response['id'] ?? null;
 
             if (!$dompetxId) {
@@ -87,7 +86,6 @@ class PaymentController extends Controller
                 ? \Carbon\Carbon::parse($response['expiresAt'])
                 : now()->addMinutes(15);
 
-            // ← FIX: ambil qrImage dari qrData
             $qrisImageUrl = $response['qrData']['qrImage']
                 ?? $this->dompetx->getQrisImageUrl($dompetxId);
 
@@ -135,7 +133,6 @@ class PaymentController extends Controller
                 'customer_name' => $user->name ?? 'Customer',
             ]);
 
-            // ← FIX: DompetX return di root
             $dompetxId = $response['id'] ?? null;
 
             if (!$dompetxId) {
@@ -143,7 +140,6 @@ class PaymentController extends Controller
                 return response()->json(['status' => false, 'message' => 'Gagal membuat Virtual Account, coba lagi'], 502);
             }
 
-            // ← FIX: field VA number di response DompetX
             $vaNumber  = $response['virtualAccountData']['vaNumber']
                 ?? $response['vaNumber']
                 ?? $response['va_number']
@@ -233,9 +229,7 @@ class PaymentController extends Controller
         }
 
         $dpResponse = $this->dompetx->checkStatus($dompetxId);
-
-        // ← FIX: DompetX return status di root, bukan di dalam 'data'
-        $dpStatus = $dpResponse['status'] ?? null;
+        $dpStatus   = $dpResponse['status'] ?? null;
 
         Log::info('[DompetX checkStatus]', ['dompetx_status' => $dpStatus, 'response' => $dpResponse]);
 
@@ -279,10 +273,12 @@ class PaymentController extends Controller
     |--------------------------------------------------
     | PUT /api/payments/{paymentId}/success
     | Konfirmasi manual / simulasi
+    | Dilindungi JWT middleware (lihat routes/api.php)
     |--------------------------------------------------
     */
     public function paymentSuccess(Request $request, $paymentId)
     {
+        $user    = $request->get('user');
         $payment = Payment::find($paymentId);
 
         if (!$payment) {
@@ -290,6 +286,22 @@ class PaymentController extends Controller
         }
 
         $order = $payment->order;
+
+        // ── Ownership check ──────────────────────────────────────────────────
+        if ($order->user_id !== $user->id) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Akses ditolak',
+            ], 403);
+        }
+
+        // ── Idempotency guard ────────────────────────────────────────────────
+        if ($payment->status === 'paid') {
+            return response()->json([
+                'status'  => true,
+                'message' => 'Pembayaran sudah dikonfirmasi',
+            ]);
+        }
 
         if ($order->payment_expired_at && now()->isAfter($order->payment_expired_at)) {
             $order->update(['status' => 'cancelled']);

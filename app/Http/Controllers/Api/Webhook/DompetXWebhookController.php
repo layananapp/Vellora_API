@@ -10,6 +10,7 @@ use App\Models\OrderHistory;
 use App\Models\PaymentLog;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Services\DompetXService;
 
 /**
@@ -46,6 +47,14 @@ class DompetXWebhookController extends Controller
         $dpStatus  = $payload['status']    ?? null;
         $reference = $payload['reference'] ?? null;
         $dpId      = $payload['id']        ?? null;
+
+        // ── Idempotency guard — cegah double-processing saat DompetX retry ──
+        $idempotencyKey = 'webhook_' . ($dpId ?? md5($rawBody));
+        if (Cache::has($idempotencyKey)) {
+            Log::info('[DompetX Webhook] Already processed', ['key' => $idempotencyKey]);
+            return response()->json(['status' => true, 'message' => 'Already processed']);
+        }
+        Cache::put($idempotencyKey, true, now()->addHours(24));
 
         Log::info('[DompetX Webhook] Diterima', $payload);
 

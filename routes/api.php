@@ -39,31 +39,41 @@ use App\Http\Controllers\Api\Report\ReportController;
 */
 Route::prefix('auth')->group(function () {
 
-    Route::post('/register', [RegisterController::class, 'register']);
-    Route::post('/login', [LoginController::class, 'login']);
-    Route::post('/logout', [LoginController::class, 'logout']);
-    Route::post('/google', [GoogleAuthController::class,'googleLogin']);
+    Route::post('/register', [RegisterController::class, 'register'])
+        ->middleware('throttle:register');
 
-    Route::post('forgot-password', [ForgotPasswordController::class, 'sendOtp']);
-    Route::post('verify-otp',      [ForgotPasswordController::class, 'verifyOtp']);
-    Route::post('reset-password',  [ForgotPasswordController::class, 'resetPassword']);
+    Route::post('/login', [LoginController::class, 'login'])
+        ->middleware('throttle:login');
 
-    Route::get('/profile', function (\Illuminate\Http\Request $request) {
-        return response()->json([
-            'status' => true,
-            'data' => $request->get('user')
-        ]);
-    })->middleware('jwt');
-
-    Route::put('/update-phone',[UserController::class, 'updatePhone'])
+    Route::post('/logout', [LoginController::class, 'logout'])
         ->middleware('jwt');
 
-    Route::put('/change-password',[UserController::class, 'changePassword'])
-        ->middleware('jwt');
+    Route::post('/google', [GoogleAuthController::class, 'googleLogin'])
+        ->middleware('throttle:login');
 
-    Route::put('/update-profile',[UserController::class, 'updateProfile'])
-        ->middleware('jwt');
+    Route::post('forgot-password', [ForgotPasswordController::class, 'sendOtp'])
+        ->middleware('throttle:otp');
 
+    Route::post('verify-otp', [ForgotPasswordController::class, 'verifyOtp'])
+        ->middleware('throttle:otp');
+
+    Route::post('reset-password', [ForgotPasswordController::class, 'resetPassword'])
+        ->middleware('throttle:otp');
+
+    // Protected auth routes (JWT required)
+    Route::middleware('jwt')->group(function () {
+
+        Route::get('/profile', function (\Illuminate\Http\Request $request) {
+            return response()->json([
+                'status' => true,
+                'data'   => $request->get('user'),
+            ]);
+        });
+
+        Route::put('/update-phone', [UserController::class, 'updatePhone']);
+        Route::put('/change-password', [UserController::class, 'changePassword']);
+        Route::put('/update-profile', [UserController::class, 'updateProfile']);
+    });
 });
 
 /*
@@ -91,13 +101,10 @@ Route::prefix('admin')
 
 /*
 |--------------------------------------------------------------------------
-| Profile
+| Profile Photo Upload (JWT protected, terpisah dari auth prefix)
 |--------------------------------------------------------------------------
 */
 Route::middleware('jwt')->group(function () {
-
-    Route::put('/update-profile', [UserController::class, 'updateProfile']);
-    Route::put('/change-password', [UserController::class, 'changePassword']);
     Route::post('/upload-profile-photo', [UserController::class, 'uploadProfilePhoto']);
 });
 
@@ -147,7 +154,7 @@ Route::prefix('products')->group(function () {
         Route::delete('/{id}', [ProductController::class, 'deleteProduct']);
         Route::post('/{productId}/images', [ProductImageController::class, 'uploadProductImage']);
         Route::post('/{productId}/variants', [ProductVariantController::class, 'createVariant']);
-        Route::put('/{id}/toggle-status',[ProductController::class, 'toggleProductStatus']);
+        Route::put('/{id}/toggle-status', [ProductController::class, 'toggleProductStatus']);
     });
 
     Route::get('/{id}', [ProductController::class, 'getProductDetail']);
@@ -235,9 +242,11 @@ Route::prefix('payments')->group(function () {
         ->middleware('jwt');
 
     Route::get('/{orderId}/status', [PaymentController::class, 'checkStatus'])
-    ->middleware('jwt');
-    
-    Route::put('/{paymentId}/success', [PaymentController::class, 'paymentSuccess']);
+        ->middleware('jwt');
+
+    // FIXED: ditambah middleware jwt (sebelumnya route ini publik tanpa auth)
+    Route::put('/{paymentId}/success', [PaymentController::class, 'paymentSuccess'])
+        ->middleware('jwt');
 
 });
 
@@ -247,6 +256,7 @@ Route::prefix('payments')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::post('/webhook/dompetx', [DompetXWebhookController::class, 'handle']);
+
 /*
 |--------------------------------------------------------------------------
 | Reviews
@@ -354,8 +364,8 @@ Route::prefix('vouchers')->group(function () {
 | Laporan
 |--------------------------------------------------------------------------
 */
-    Route::post('/reports', [ReportController::class, 'store'])
+Route::post('/reports', [ReportController::class, 'store'])
     ->middleware('jwt');
 
-    Route::get('/reports', [ReportController::class, 'index'])
+Route::get('/reports', [ReportController::class, 'index'])
     ->middleware('jwt');

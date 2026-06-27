@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Services\ReviewService;
 use App\Models\Review;
+use Illuminate\Support\Facades\Log;
 
 class ReviewController extends Controller
 {
@@ -101,18 +102,57 @@ class ReviewController extends Controller
                 'status' => true,
                 'data'   => $reviews,
             ]);
+
         } catch (\Throwable $e) {
+            Log::error('[Review] getProductReviews gagal', [
+                'product_id' => $productId,
+                'error'      => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'status'  => false,
-                'message' => 'Debug Error: ' . $e->getMessage(),
-                'trace'   => $e->getTraceAsString()
+                'message' => 'Gagal memuat ulasan',
             ], 500);
         }
     }
 
+    /*
+    |--------------------------------------------------
+    | GET /api/admin/reviews
+    | Semua review (admin panel) — tidak dipakai Ionic,
+    | tidak di-paginate agar tidak breaking change di
+    | marketplace-web.
+    |--------------------------------------------------
+    */
     public function getAllReviews()
     {
-        $reviews = Review::with(['user', 'product'])->latest()->get();
+        $reviews = Review::with(['user', 'product.images'])->latest()->get()
+            ->map(function ($review) {
+                return [
+                    'id'         => $review->id,
+                    'rating'     => $review->rating,
+                    'review'     => $review->review,
+                    'created_at' => $review->created_at?->toIso8601String(),
+
+                    'user' => $review->user ? [
+                        'id'                 => $review->user->id,
+                        'name'               => $review->user->name,
+                        'email'              => $review->user->email,
+                        'phone_number'       => $review->user->phone_number ?? null,
+                        'profile_photo_path' => $review->user->profile_photo ?? $review->user->profile_photo_path ?? null,
+                    ] : null,
+
+                    'product' => $review->product ? [
+                        'id'           => $review->product->id,
+                        'product_name' => $review->product->product_name,
+                        'price'        => $review->product->price,
+                        'images'       => $review->product->images->map(fn($img) => [
+                            'id'    => $img->id,
+                            'image' => $img->image,
+                        ])->values()->all(),
+                    ] : null,
+                ];
+            });
 
         return response()->json([
             'status' => true,
